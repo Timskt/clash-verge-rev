@@ -141,7 +141,7 @@ jobs:
       - name: Download built packages
         uses: actions/download-artifact@v8
         with:
-          pattern: meeting-*
+          pattern: "*"
           path: release-assets
           merge-multiple: true
 
