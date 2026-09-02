@@ -120,7 +120,7 @@ jobs:
         run: |
           case "${{ runner.os }}" in
             Windows) test -f "target/${{ matrix.target }}/release/meeting.exe" ;;
-            macOS) test -f "target/${{ matrix.target }}/release/bundle/macos/Meeting.app/Contents/MacOS/meeting" ;;
+            macOS) test -f "target/${{ matrix.target }}/release/meeting" ;;
             Linux) test -f "target/${{ matrix.target }}/release/meeting" ;;
           esac
 
@@ -130,7 +130,7 @@ jobs:
           name: meeting-${{ matrix.artifact }}-${{ matrix.target }}
           path: ${{ matrix.path }}
           if-no-files-found: error
-          archive: false
+          archive: ${{ matrix.artifact == 'linux' }}
 
   publish-release:
     name: Publish Meeting Release
