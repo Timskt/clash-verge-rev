@@ -6,19 +6,19 @@
     "linux": {
       "deb": {
         "depends": ["openssl", "libayatana-appindicator3-1"],
-        "desktopTemplate": "./packages/linux/clash-verge.desktop",
-        "provides": ["clash-verge"],
-        "conflicts": ["clash-verge"],
-        "replaces": ["clash-verge"],
+        "desktopTemplate": "./packages/linux/meeting.desktop",
+        "provides": ["meeting"],
+        "conflicts": ["meeting"],
+        "replaces": ["meeting"],
         "postInstallScript": "./packages/linux/post-install.sh",
         "preRemoveScript": "./packages/linux/pre-remove.sh"
       },
       "rpm": {
         "depends": ["openssl", "libayatana-appindicator-gtk3"],
-        "desktopTemplate": "./packages/linux/clash-verge.desktop",
-        "provides": ["clash-verge"],
-        "conflicts": ["clash-verge"],
-        "obsoletes": ["clash-verge"],
+        "desktopTemplate": "./packages/linux/meeting.desktop",
+        "provides": ["meeting"],
+        "conflicts": ["meeting"],
+        "obsoletes": ["meeting"],
         "postInstallScript": "./packages/linux/post-install.sh",
         "preRemoveScript": "./packages/linux/pre-remove.sh"
       }

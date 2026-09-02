@@ -1,0 +1,135 @@
+name: Meeting Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/meeting-build.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "src-tauri/**"
+      - "scripts/prebuild.mjs"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  HUSKY: 0
+  NODE_OPTIONS: "--max_old_space_size=4096"
+  RUST_BACKTRACE: short
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            artifact: windows
+            path: target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          - name: macOS Apple Silicon
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bundle: dmg
+            artifact: macos
+            path: target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          - name: macOS Intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+            bundle: dmg
+            artifact: macos
+            path: target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          - name: Linux x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundle: deb,rpm
+            artifact: linux
+            path: |
+              target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+              target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxslt1.1 \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: meeting-${{ matrix.target }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24.20.0"
+          cache: pnpm
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 12.0.0
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare platform resources
+        run: pnpm run prebuild ${{ matrix.target }}
+
+      - name: Build Meeting bundle
+        uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tauriScript: pnpm
+          args: --target ${{ matrix.target }} -b ${{ matrix.bundle }}
+
+      - name: Verify main executable name
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Windows) test -f "target/${{ matrix.target }}/release/meeting.exe" ;;
+            macOS) test -f "target/${{ matrix.target }}/release/bundle/macos/Meeting.app/Contents/MacOS/meeting" ;;
+            Linux) test -f "target/${{ matrix.target }}/release/meeting" ;;
+          esac
+
+      - name: Upload ${{ matrix.artifact }} bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: meeting-${{ matrix.artifact }}-${{ matrix.target }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+          archive: false
