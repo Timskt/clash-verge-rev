@@ -2,6 +2,12 @@ name: Meeting Build
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "GitHub Release tag to create or update"
+        required: true
+        default: "meeting-build"
+        type: string
   push:
     branches:
       - dev
@@ -13,7 +19,7 @@ on:
       - "scripts/prebuild.mjs"
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   CARGO_INCREMENTAL: 0
@@ -105,17 +111,9 @@ jobs:
         uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tauriScript: pnpm
-          args: --target ${{ matrix.target }} -b ${{ matrix.bundle }}
+          args: --target ${{ matrix.target }} -b ${{ matrix.bundle }} --no-sign --config src-tauri/tauri.ci.conf.json
 
       - name: Verify main executable name
         shell: bash
@@ -133,3 +131,53 @@ jobs:
           path: ${{ matrix.path }}
           if-no-files-found: error
           archive: false
+
+  publish-release:
+    name: Publish Meeting Release
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: meeting-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release packages
+        shell: bash
+        run: |
+          mapfile -t files < <(find release-assets -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' \) -print)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No Meeting installation packages were found."
+            exit 1
+          fi
+          printf 'Release package: %s\n' "${files[@]}"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Meeting Build" \
+              --notes "Unsigned Meeting installers built from commit $SOURCE_SHA." \
+              --prerelease
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" \
+              --title "Meeting Build" \
+              --notes "Unsigned Meeting installers built from commit $SOURCE_SHA." \
+              --prerelease
+          fi
+
+          mapfile -t files < <(find release-assets -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' \) -print)
+          gh release upload "$RELEASE_TAG" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
