@@ -1,0 +1,41 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Meeting",
+  "mainBinaryName": "meeting",
+  "bundle": {
+    "longDescription": "Meeting",
+    "shortDescription": "Meeting",
+    "publisher": "Meeting",
+    "icon": [
+      "icons/meeting/32x32.png",
+      "icons/meeting/128x128.png",
+      "icons/meeting/128x128@2x.png",
+      "icons/meeting/icon.icns",
+      "icons/meeting/icon.ico"
+    ],
+    "createUpdaterArtifacts": false,
+    "linux": {
+      "deb": {
+        "desktopTemplate": "./packages/linux/meeting.desktop",
+        "provides": ["meeting"],
+        "conflicts": ["meeting"],
+        "replaces": ["meeting"],
+        "postInstallScript": "./packages/linux/meeting-post-install.sh",
+        "preRemoveScript": "./packages/linux/meeting-pre-remove.sh"
+      },
+      "rpm": {
+        "desktopTemplate": "./packages/linux/meeting.desktop",
+        "provides": ["meeting"],
+        "conflicts": ["meeting"],
+        "obsoletes": ["meeting"],
+        "postInstallScript": "./packages/linux/meeting-post-install.sh",
+        "preRemoveScript": "./packages/linux/meeting-pre-remove.sh"
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/meeting/icon.ico"
+      }
+    }
+  }
+}

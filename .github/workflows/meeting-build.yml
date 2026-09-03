@@ -17,6 +17,7 @@ on:
       - "pnpm-lock.yaml"
       - "src-tauri/**"
       - "scripts/prebuild.mjs"
+      - "tools/meeting/**"
 
 permissions:
   contents: write
@@ -107,13 +108,16 @@ jobs:
       - name: Prepare platform resources
         run: pnpm run prebuild ${{ matrix.target }}
 
+      - name: Apply Meeting build overlay
+        run: node tools/meeting/prepare-build.mjs
+
       - name: Build Meeting bundle
         uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: pnpm
-          args: --target ${{ matrix.target }} -b ${{ matrix.bundle }} --no-sign --config src-tauri/tauri.ci.conf.json
+          args: --target ${{ matrix.target }} -b ${{ matrix.bundle }} --no-sign --config src-tauri/tauri.meeting.conf.json
 
       - name: Verify main executable name
         shell: bash
