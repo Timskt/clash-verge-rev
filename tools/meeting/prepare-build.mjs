@@ -6,7 +6,7 @@ const cargoPath = path.join(root, 'src-tauri', 'Cargo.toml')
 const lockPath = path.join(root, 'Cargo.lock')
 
 function updatePackageSection(source) {
-  const match = source.match(/\[package\]\n([\s\S]*?)(?=\n\[)/)
+  const match = source.match(/\[package\]\r?\n([\s\S]*?)(?=\r?\n\[)/)
   if (!match) throw new Error('Could not find the root Cargo package section')
 
   const name = match[1].match(/^name = "([^"]+)"$/m)?.[1]
@@ -26,8 +26,12 @@ function updatePackageSection(source) {
 
 function updateLockPackage(source, packageName) {
   const marker = `[[package]]\nname = "${packageName}"\n`
+  const windowsMarker = `[[package]]\r\nname = "${packageName}"\r\n`
   if (source.includes(marker)) {
     return source.replace(marker, '[[package]]\nname = "meeting"\n')
+  }
+  if (source.includes(windowsMarker)) {
+    return source.replace(windowsMarker, '[[package]]\r\nname = "meeting"\r\n')
   }
   if (source.includes('[[package]]\nname = "meeting"\n')) return source
   throw new Error('Could not find the root package in Cargo.lock')
