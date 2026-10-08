@@ -79,9 +79,12 @@ jobs:
             patchelf
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.99.0
-        with:
-          targets: ${{ matrix.target }}
+        shell: bash
+        # rust-toolchain.toml outranks any default this step sets, and the toolchain
+        # must be the one cargo resolves or the target below is installed into nothing.
+        run: |
+          rustup toolchain install --profile minimal
+          rustup target add ${{ matrix.target }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -98,7 +101,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: "24.20.0"
+          node-version-file: ".tool-versions"
           cache: pnpm
 
       - name: Install dependencies
