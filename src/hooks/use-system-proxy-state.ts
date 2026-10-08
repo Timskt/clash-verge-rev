@@ -9,8 +9,8 @@ import {
   getEmbeddedServerPort,
   patchVergeConfig,
 } from '@/services/cmds'
+import { mutate } from '@/services/mutate'
 import {
-  getCacheData,
   removeCacheData,
   revalidateQueries,
   useQuery,
@@ -51,9 +51,7 @@ export const useSystemProxyState = () => {
 
   const toggleSystemProxy = async (enabled: boolean) => {
     // Roll failed optimistic writes back to the latest confirmed state.
-    let confirmed =
-      getCacheData<IVergeConfig>(['getVergeConfig'])?.enable_system_proxy ??
-      false
+    let confirmed = verge?.enable_system_proxy ?? false
     mutateVerge(
       (prev) => (prev ? { ...prev, enable_system_proxy: enabled } : prev),
       false,
@@ -67,10 +65,16 @@ export const useSystemProxyState = () => {
       while (pendingRef.current !== null) {
         const target = pendingRef.current
         pendingRef.current = null
-        await patchVergeConfig({ enable_system_proxy: target })
+        await mutate(() => patchVergeConfig({ enable_system_proxy: target }), {
+          id: 'toggle-system-proxy',
+          errorNotice: false,
+        })
         confirmed = target
         if (!target && verge?.auto_close_connection) {
-          await closeAllConnections().catch(() => {})
+          await mutate(() => closeAllConnections(), {
+            id: 'close-all-connections',
+            errorNotice: false,
+          }).catch(() => {})
         }
       }
     } catch (error) {

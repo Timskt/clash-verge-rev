@@ -384,6 +384,14 @@ async fn current_service_proxy_config(verge: &IVerge) -> Result<MacosProxyConfig
     service_proxy_config(verge, mixed_port, 0)
 }
 
+/// Whether macOS has a network service to write the proxy on right now.
+#[cfg(target_os = "macos")]
+pub async fn has_network_service() -> bool {
+    tokio::task::spawn_blocking(|| sysproxy::Sysproxy::has_network_service().unwrap_or(true))
+        .await
+        .unwrap_or(true)
+}
+
 pub fn is_reportable(error: &anyhow::Error) -> bool {
     is_reportable_given(error, notification::has_pending_failure)
 }
@@ -462,10 +470,13 @@ fn table_effect(result: &Result<()>) -> TableEffect<'_> {
     }
 }
 
+#[tracing::instrument(skip_all, level = "info", fields(route = tracing::field::Empty))]
 pub async fn apply() -> Result<()> {
     let running_mode = CoreManager::global().get_running_mode();
     let verge = Config::verge().await.latest_arc();
-    let result = match proxy_backend_route(cfg!(target_os = "macos"), &running_mode) {
+    let route = proxy_backend_route(cfg!(target_os = "macos"), &running_mode);
+    tracing::Span::current().record("route", tracing::field::debug(&route));
+    let result = match route {
         ProxyBackendRoute::Local => match Sysopt::global().update_sysproxy().await {
             Ok(()) => Ok(()),
             Err(error) => Err(classify_local_apply_failure(error).await),
@@ -511,30 +522,42 @@ pub async fn clear() -> Result<()> {
 
 /// A failed system call is usually a transient RPC hiccup, so give it a few tries.
 async fn clear_with_retry() -> Result<()> {
-    for _ in 1..CLEAR_ATTEMPTS {
-        match clear_inner().await {
-            Err(error)
+    use crate::utils::retry::{RetryError, RetryPolicy, retry};
+    retry(
+        RetryPolicy::fixed(
+            std::num::NonZeroUsize::MIN.saturating_add((CLEAR_ATTEMPTS - 1) as usize),
+            CLEAR_RETRY_DELAY,
+        ),
+        |attempt| async move {
+            clear_inner().await.map_err(|error| {
                 if matches!(
                     SysproxyFailure::from_chain(&error),
                     Some(SysproxyFailure::SystemCallFailed)
-                ) =>
-            {
-                logging!(
-                    warn,
-                    Type::Core,
-                    "clearing the system proxy failed; retrying: {error:#}"
-                );
-                tokio::time::sleep(CLEAR_RETRY_DELAY).await;
-            }
-            other => return other,
-        }
-    }
-    clear_inner().await
+                ) {
+                    if attempt + 1 < CLEAR_ATTEMPTS as usize {
+                        logging!(
+                            warn,
+                            Type::Core,
+                            "clearing the system proxy failed (attempt {}/{CLEAR_ATTEMPTS}); retrying: {error:#}",
+                            attempt + 1
+                        );
+                    }
+                    RetryError::Retry(error)
+                } else {
+                    RetryError::Stop(error)
+                }
+            })
+        },
+    )
+    .await
 }
 
+#[tracing::instrument(skip_all, level = "info", fields(route = tracing::field::Empty))]
 async fn clear_inner() -> Result<()> {
     let running_mode = CoreManager::global().get_running_mode();
-    match proxy_backend_route(cfg!(target_os = "macos"), &running_mode) {
+    let route = proxy_backend_route(cfg!(target_os = "macos"), &running_mode);
+    tracing::Span::current().record("route", tracing::field::debug(&route));
+    match route {
         ProxyBackendRoute::Local => Sysopt::global().reset_sysproxy().await.map_err(classify_local_failure),
         ProxyBackendRoute::Service => {
             SERVICE_PROXY_OPERATIONS
@@ -590,13 +613,16 @@ pub async fn refresh_guard() -> Result<()> {
                 .await
             {
                 Ok(true) => consecutive_failures = 0,
-                Ok(false) => break,
+                Ok(false) => {
+                    logging!(debug, Type::Core, "proxy guard superseded (generation {generation})");
+                    break;
+                }
                 Err(error) => {
                     consecutive_failures += 1;
                     logging!(
                         warn,
                         Type::Core,
-                        "failed to refresh system proxy through Service ({}/{}): {:#}",
+                        "failed to refresh system proxy through Service (generation {generation}, {}/{}): {:#}",
                         consecutive_failures,
                         GUARD_FAILURES_BEFORE_STOPPING,
                         error
@@ -1069,7 +1095,10 @@ mod tests {
         assert_eq!(refusal_classification(None), SysproxyFailure::PrivilegeRequired);
     }
 
-    use super::{SystemProxyStateUnknown, is_reportable_given, rollback_failure, service_apply_result};
+    use super::{SystemProxyStateUnknown, is_reportable_given, rollback_failure};
+
+    #[cfg(target_os = "macos")]
+    use super::service_apply_result;
 
     #[cfg(target_os = "macos")]
     #[test]
