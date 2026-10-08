@@ -79,7 +79,7 @@ jobs:
             patchelf
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.98.0
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           targets: ${{ matrix.target }}
 
@@ -93,7 +93,6 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 12.0.0
           run_install: false
 
       - name: Install Node.js
